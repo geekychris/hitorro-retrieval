@@ -72,8 +72,13 @@ public class DocumentRetriever implements Retriever {
         try {
             Result<JsonNode> result = store.get(key);
             if (result.isSuccess() && result.getValue().isPresent()) {
-                JsonNode fullDoc = result.getValue().get();
-                JVSMerger.merge(indexDoc.getJsonNode(), fullDoc);
+                // KV store has the full enriched document — use it as primary.
+                // Only carry over Lucene-specific metadata (_score, _uid, _index).
+                JVS fullDoc = new JVS(result.getValue().get());
+                if (indexDoc.exists("_score")) fullDoc.set("_score", indexDoc.get("_score"));
+                if (indexDoc.exists("_uid")) fullDoc.set("_uid", indexDoc.get("_uid"));
+                if (indexDoc.exists("_index")) fullDoc.set("_index", indexDoc.get("_index"));
+                return fullDoc;
             }
         } catch (Exception e) {
             log.debug("Failed to fetch document {}: {}", key, e.getMessage());
