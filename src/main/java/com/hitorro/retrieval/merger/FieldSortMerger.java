@@ -34,13 +34,15 @@ public class FieldSortMerger implements ResultMerger {
         int start = Math.min(offset, all.size());
         int end = Math.min(offset + limit, all.size());
 
-        return SearchResult.builder()
+        var builder = SearchResult.builder()
                 .documents(new ArrayList<>(all.subList(start, end)))
                 .totalHits(totalHits)
                 .offset(offset)
                 .limit(limit)
-                .searchTimeMs(totalTime)
-                .build();
+                .searchTimeMs(totalTime);
+        var mergedFacets = ResultMerger.mergeFacets(results);
+        if (mergedFacets != null) builder.facets(mergedFacets);
+        return builder.build();
     }
 
     @Override

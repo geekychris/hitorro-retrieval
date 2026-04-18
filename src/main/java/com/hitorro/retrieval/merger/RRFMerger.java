@@ -60,13 +60,15 @@ public class RRFMerger implements ResultMerger {
             }
         }
 
-        return SearchResult.builder()
+        var builder = SearchResult.builder()
                 .documents(page)
                 .totalHits(totalHits)
                 .offset(offset)
                 .limit(limit)
-                .searchTimeMs(totalTime)
-                .build();
+                .searchTimeMs(totalTime);
+        var mergedFacets = ResultMerger.mergeFacets(results);
+        if (mergedFacets != null) builder.facets(mergedFacets);
+        return builder.build();
     }
 
     @Override

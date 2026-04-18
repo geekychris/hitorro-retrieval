@@ -45,13 +45,15 @@ public class ScoreMerger implements ResultMerger {
         int end = Math.min(offset + limit, sorted.size());
         List<JVS> page = sorted.subList(start, end);
 
-        return SearchResult.builder()
+        var builder = SearchResult.builder()
                 .documents(new ArrayList<>(page))
                 .totalHits(totalHits)
                 .offset(offset)
                 .limit(limit)
-                .searchTimeMs(totalTime)
-                .build();
+                .searchTimeMs(totalTime);
+        var mergedFacets = ResultMerger.mergeFacets(results);
+        if (mergedFacets != null) builder.facets(mergedFacets);
+        return builder.build();
     }
 
     @Override
