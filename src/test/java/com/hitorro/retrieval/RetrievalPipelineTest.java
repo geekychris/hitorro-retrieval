@@ -110,7 +110,7 @@ class RetrievalPipelineTest {
     void shouldFailWithoutIndexManager() {
         assertThatThrownBy(() -> new RetrievalPipelineBuilder().build())
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("IndexManager");
+                .hasMessageContaining("SearchProvider");
     }
 
     @Test

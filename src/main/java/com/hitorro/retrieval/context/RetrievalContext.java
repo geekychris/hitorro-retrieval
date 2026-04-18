@@ -5,8 +5,8 @@ import com.hitorro.jsontypesystem.JVS;
 import com.hitorro.jsontypesystem.Type;
 import com.hitorro.retrieval.aggregate.RetrievalAggregate;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Mutable context carrying state between pipeline stages.
@@ -24,6 +24,7 @@ public class RetrievalContext {
     private SearchResult searchResult;
     private final List<RetrievalAggregate> aggregates = new ArrayList<>();
     private final List<String> errors = new ArrayList<>();
+    private final Map<String, Object> attributes = new ConcurrentHashMap<>();
 
     public RetrievalContext(String indexName, Type type, String lang) {
         this.indexName = indexName;
@@ -77,4 +78,33 @@ public class RetrievalContext {
     public List<String> getErrors() { return errors; }
 
     public boolean hasErrors() { return !errors.isEmpty(); }
+
+    // ─── Typed Attributes (inter-stage communication) ────────────
+
+    public void setAttribute(String key, Object value) {
+        if (key != null && value != null) {
+            attributes.put(key, value);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T getAttribute(String key, Class<T> type) {
+        Object val = attributes.get(key);
+        if (val != null && type.isInstance(val)) {
+            return (T) val;
+        }
+        return null;
+    }
+
+    public <T> Optional<T> getOptionalAttribute(String key, Class<T> type) {
+        return Optional.ofNullable(getAttribute(key, type));
+    }
+
+    public boolean hasAttribute(String key) {
+        return attributes.containsKey(key);
+    }
+
+    public Map<String, Object> getAttributes() {
+        return Collections.unmodifiableMap(attributes);
+    }
 }

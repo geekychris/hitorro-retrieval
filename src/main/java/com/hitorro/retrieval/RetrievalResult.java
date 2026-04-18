@@ -6,6 +6,8 @@ import com.hitorro.retrieval.context.RetrievalContext;
 import com.hitorro.util.core.iterator.AbstractIterator;
 
 import java.util.List;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * Result of a retrieval pipeline execution.
@@ -25,6 +27,12 @@ public class RetrievalResult {
 
     /** Lazy document iterator. Consume this before calling getAggregates(). */
     public AbstractIterator<JVS> getDocuments() { return documents; }
+
+    /** Returns documents as a Java Stream. */
+    public Stream<JVS> getDocumentStream() {
+        Iterable<JVS> iterable = () -> documents;
+        return StreamSupport.stream(iterable.spliterator(), false);
+    }
 
     /** Materializes all documents into a list. */
     public List<JVS> getDocumentList() {

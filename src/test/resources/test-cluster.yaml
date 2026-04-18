@@ -1,0 +1,23 @@
+cluster:
+  name: test-cluster
+  nodes:
+    - name: index-1
+      host: index1.hitorro.local
+      port: 8080
+      roles: [INDEX]
+    - name: index-2
+      host: index2.hitorro.local
+      port: 8080
+      roles: [INDEX]
+    - name: kv-1
+      host: kv1.hitorro.local
+      port: 8081
+      roles: [KVSTORE]
+    - name: kv-2
+      host: kv2.hitorro.local
+      port: 8081
+      roles: [KVSTORE]
+    - name: coord-1
+      host: coord1.hitorro.local
+      port: 8082
+      roles: [COORDINATOR, INDEX]

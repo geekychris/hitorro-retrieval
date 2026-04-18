@@ -3,11 +3,17 @@ package com.hitorro.retrieval;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hitorro.index.IndexManager;
 import com.hitorro.jsontypesystem.JVS;
+import com.hitorro.jsontypesystem.datamapper.AIOperations;
 import com.hitorro.kvstore.TypedKVStore;
 import com.hitorro.retrieval.context.RetrievalContext;
+import com.hitorro.retrieval.docstore.DocumentStore;
+import com.hitorro.retrieval.docstore.LocalKVDocumentStore;
 import com.hitorro.retrieval.pipeline.RetrievalPipeline;
 import com.hitorro.retrieval.pipeline.RetrievalPipelineBuilder;
 import com.hitorro.retrieval.pipeline.Retriever;
+import com.hitorro.retrieval.pipeline.StreamRetriever;
+import com.hitorro.retrieval.search.LuceneSearchProvider;
+import com.hitorro.retrieval.search.SearchProvider;
 import com.hitorro.util.core.iterator.AbstractIterator;
 
 import java.util.ArrayList;
@@ -16,62 +22,59 @@ import java.util.List;
 /**
  * Main entry point for the retrieval module.
  *
- * <p>Constructs and executes retrieval pipelines against named indexes,
- * optionally enriching results from a RocksDB document store.
- *
- * <pre>
- * // Index-only retrieval
- * RetrievalService service = new RetrievalService(indexManager);
- *
- * // With KVStore for full document fetch
- * RetrievalService service = new RetrievalService(indexManager, documentStore);
- *
- * // Execute a query
- * JVS query = JVS.read("""
- *     {"search": {"query": "title.mls:climate", "limit": 10, "facets": ["department"]}}
- *     """);
- * RetrievalResult result = service.retrieve(config, query);
- * List&lt;JVS&gt; docs = result.getDocumentList();
- * List&lt;JVS&gt; aggregates = result.getAggregates();
- * </pre>
+ * <p>Constructs and executes retrieval pipelines with pluggable search providers,
+ * document stores, result mergers, and AI summarization.
  */
 public class RetrievalService {
 
-    private final IndexManager indexManager;
-    private final TypedKVStore<JsonNode> documentStore;
+    private final SearchProvider searchProvider;
+    private final DocumentStore documentStore;
     private final List<Retriever> customStages = new ArrayList<>();
+    private AIOperations aiOperations;
 
-    public RetrievalService(IndexManager indexManager, TypedKVStore<JsonNode> documentStore) {
-        this.indexManager = indexManager;
+    public RetrievalService(SearchProvider searchProvider, DocumentStore documentStore) {
+        this.searchProvider = searchProvider;
         this.documentStore = documentStore;
     }
 
-    public RetrievalService(IndexManager indexManager) {
-        this(indexManager, null);
+    public RetrievalService(SearchProvider searchProvider) {
+        this(searchProvider, null);
     }
 
-    /** Register a custom pipeline stage that will be appended to every pipeline. */
+    /** Backward-compatible: wraps IndexManager + TypedKVStore. */
+    public RetrievalService(IndexManager indexManager, TypedKVStore<JsonNode> kvStore) {
+        this(new LuceneSearchProvider(indexManager),
+             kvStore != null ? new LocalKVDocumentStore(kvStore) : null);
+    }
+
+    /** Backward-compatible: wraps IndexManager only. */
+    public RetrievalService(IndexManager indexManager) {
+        this(new LuceneSearchProvider(indexManager));
+    }
+
     public RetrievalService addCustomStage(Retriever stage) {
         customStages.add(stage);
         return this;
     }
 
-    /**
-     * Execute a retrieval query against the given config.
-     *
-     * @param config the retrieval target (index name, type, language)
-     * @param query  the retrieval query (JVS with search/fetch/fixup/page sections)
-     * @return a RetrievalResult containing the document iterator and aggregates
-     */
+    public RetrievalService enableSummarization(AIOperations ai) {
+        this.aiOperations = ai;
+        return this;
+    }
+
     public RetrievalResult retrieve(RetrievalConfig config, JVS query) {
         RetrievalContext context = new RetrievalContext(
                 config.getIndexName(), config.getType(), config.getDefaultLang());
 
         RetrievalPipelineBuilder builder = new RetrievalPipelineBuilder()
-                .indexManager(indexManager);
+                .searchProvider(searchProvider);
 
         if (documentStore != null) {
             builder.documentStore(documentStore);
+        }
+
+        if (aiOperations != null) {
+            builder.enableSummarization(aiOperations);
         }
 
         for (Retriever stage : customStages) {
