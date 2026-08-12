@@ -5,9 +5,7 @@
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.hitorro</groupId>
-    <artifactId>hitorro-retrieval</artifactId>
-    <version>3.0.0</version>
+    <groupId>com.hitorro</groupId><artifactId>hitorro-retrieval</artifactId><version>3.0.1</version>
     <packaging>jar</packaging>
 
     <name>Hitorro Retrieval</name>
@@ -19,7 +17,7 @@
         <maven.compiler.target>21</maven.compiler.target>
 
         <hitorro.version>3.0.1</hitorro.version>
-        <hitorro.index.version>3.0.0</hitorro.index.version>
+        <hitorro.index.version>3.0.1</hitorro.index.version>
         <jackson.version>2.18.2</jackson.version>
         <junit.version>5.11.4</junit.version>
         <assertj.version>3.27.3</assertj.version>
@@ -39,6 +37,11 @@
     </repositories>
 
     <dependencies>
+        <dependency>
+            <groupId>com.hitorro</groupId>
+            <artifactId>hitorro-streams</artifactId>
+            <version>3.0.1</version>
+        </dependency>
         <!-- HiTorro Index (Lucene search, indexing, facets) -->
         <dependency>
             <groupId>com.hitorro</groupId>
