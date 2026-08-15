@@ -75,14 +75,32 @@ public class DocumentRetriever implements Retriever {
         return indexDoc;
     }
 
+    /**
+     * Best-effort key extraction. Each shape is checked in its own try/catch
+     * because {@code doc.exists("id.domain")} can throw when {@code id} is a
+     * scalar (Propaccess cannot descend into a leaf) — the previous single
+     * try/catch swallowed that exception and silently returned null, so the
+     * scalar-{@code id} fallback never ran and the KV fetch stage looked
+     * like a no-op.
+     */
     private String extractKey(JVS doc) {
         try {
             if (doc.exists("id.domain") && doc.exists("id.did")) {
                 return doc.getString("id.domain") + "/" + doc.getString("id.did");
             }
+        } catch (Exception ignore) {}
+        try {
             if (doc.exists("id.did")) return doc.getString("id.did");
-            if (doc.exists("id")) return doc.getString("id");
-        } catch (Exception ignored) {}
+        } catch (Exception ignore) {}
+        try {
+            if (doc.exists("id")) {
+                String s = doc.getString("id");
+                if (s != null && !s.isEmpty()) return s;
+            }
+        } catch (Exception ignore) {}
+        try {
+            if (doc.exists("_uid")) return doc.getString("_uid");
+        } catch (Exception ignore) {}
         return null;
     }
 }
