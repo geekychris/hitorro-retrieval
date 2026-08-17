@@ -1,0 +1,270 @@
+= Retrieval Pipeline
+:toc: left
+:toclevels: 3
+:sectnums:
+:source-highlighter: rouge
+
+`hitorro-retrieval` composes indexed search with document fetch,
+selective re-enrichment, pagination, faceting, and LLM
+summarization — all as pluggable pipeline stages driven by a JVS query
+document. This is the layer that turns "keyword hits" into "rich
+result objects."
+
+Related:
+xref:../../hitorro-index/docs/lucene-integration.adoc[Indexing] ·
+xref:../../hitorro-jsontypesystem/docs/enrichment.adoc[Enrichment] ·
+xref:../../hitorro-fleet-retrieval/docs/README.adoc[Fleet Retrieval Service]
+
+== Stage model
+
+....
+Query JVS ────▶ RetrievalPipelineBuilder.build(query, ctx)
+                        │
+                        ▼
+                 IndexRetriever      ── uses SearchProvider (Lucene)
+                        │             emits hits with keys/scores
+                        ▼
+                 DocumentRetriever   ── uses KVStore (RocksDB)
+                        │             hydrates full JVS per hit
+                        ▼
+                 FixupRetriever      ── uses EnrichExecutionBuilder
+                        │             runs on-demand re-enrichment
+                        ▼                (tags: [basic, ...])
+                 PaginationRetriever ── slices to page window
+                        │
+                        ▼
+                 FacetRetriever      ── uses IndexSearcher facets
+                        │
+                        ▼
+                 SummarizationRetriever ── uses AIOperations
+                        │
+                        ▼
+                 RetrievalResult
+....
+
+Each stage decides whether to participate by inspecting the query JVS
+via `participate(ctx)`. If the query has no `fetch` sub-object,
+`DocumentRetriever` skips. If no `summarize`, the summarizer skips.
+And so on.
+
+== Query shape
+
+The query is a JVS `Type: search_query`. Minimum viable:
+
+[source,json]
+----
+{
+  "search": {
+    "query": "London Heathrow",
+    "offset": 0,
+    "limit": 10,
+    "lang": "en"
+  }
+}
+----
+
+Add stages by adding sub-objects:
+
+[source,json]
+----
+{
+  "search": { "query": "London", "limit": 10, "lang": "en", "facets": ["country", "category"] },
+  "fetch":  {},
+  "fixup":  { "tags": ["basic", "segmented"] },
+  "page":   { "rows": 10, "page": 0 },
+  "summarize": { "field": "body.mls[0].clean", "maxWords": 40 }
+}
+----
+
+The mesh driver's UI has a Search tab that visualizes this — each
+stage toggleable via a checkbox — and shows the exact JSON it POSTs.
+
+== Stage reference
+
+[cols="2,3,4", options="header"]
+|===
+| Stage                 | Reads                             | Writes / effect
+| `IndexRetriever`      | `search.query`, `.offset`, `.limit`, `.lang`, `.facets`  | Emits result rows with `_uid`, `_score`, projected fields, `_source` if stored
+| `DocumentRetriever`   | `fetch.*` (existence — even `{}` triggers) | For each hit, fetches full JVS from KV store keyed by `_uid` (or configured `id.id` path). Merges into result row.
+| `FixupRetriever`      | `fixup.tags[]`                    | Runs `EnrichExecutionBuilderMapper` on each fetched JVS with the caller's tag set. Populates dynamic fields (segmented, pos, segmented_ner)
+| `PaginationRetriever` | `page.rows`, `page.page`          | Windows the result rows; sets `totalHits`, `totalPages`, `hasMore`
+| `FacetRetriever`      | `search.facets[]`                 | Runs `FacetsCollector` over the index; adds `aggregates` block per dim
+| `SummarizationRetriever` | `summarize.field`, `.maxWords`, `.language` | Calls `AIOperations.summarize(text, maxWords)`; writes `summary` field on each row
+|===
+
+== Response shape
+
+[source,json]
+----
+{
+  "documents": [
+    { "_uid": "articles/a1", "_score": 3.24,
+      "id": {...}, "title": {...}, "body": {...},
+      "country": "GB",
+      "summary": "London Heathrow announced ..."
+    },
+    ...
+  ],
+  "totalHits": 42,
+  "totalPages": 5,
+  "aggregates": [
+    { "dim": "country", "buckets": [ {"value":"GB","count":15}, ... ] }
+  ],
+  "stagesUsed": ["IndexRetriever", "DocumentRetriever", "FixupRetriever", ...],
+  "searchTimeMs": 42,
+  "totalTimeMs": 87
+}
+----
+
+`stagesUsed` reflects which stages actually ran — useful debug when
+`fetch: {enabled: true}` accidentally routed through `getString` and
+returned null (participate() false-negative). The standard pattern
+`fetch: {}` (empty object) always participates.
+
+== The context object
+
+Stages share state via `ContextAttributes`:
+
+[cols="3,5", options="header"]
+|===
+| Attribute                          | Meaning
+| `INDEX_TYPE`                       | Set by `IndexRetriever` — the `Type` used for the search index
+| `DOCUMENT_STORE_TYPE`              | Set by `DocumentRetriever` — enables downstream stages that need full docs
+| `SEARCH_LANG`                      | Set by `IndexRetriever` — the effective language for later stages
+| `AI_OPERATIONS`                    | Injected — the `AIOperations` impl for the summarizer
+|===
+
+Downstream stages check `ctx.hasAttribute(...)` in `participate` — if
+the required upstream context isn't set, they skip cleanly instead of
+failing.
+
+== Wiring the pipeline
+
+Standard construction (in `RetrievalService`):
+
+[source,java]
+----
+RetrievalPipeline pipeline = RetrievalPipelineBuilder
+        .stage(new IndexRetriever(searchProvider))
+        .stage(new DocumentRetriever(kvStore))
+        .stage(new FixupRetriever(typeSystem))
+        .stage(new PaginationRetriever())
+        .stage(new FacetRetriever(searchProvider))
+        .stage(new SummarizationRetriever(aiOps))
+        .build();
+
+RetrievalResult result = pipeline.execute(query, ctx);
+----
+
+`Retriever` is a small interface:
+
+[source,java]
+----
+public interface Retriever {
+    boolean participate(RetrievalContext ctx);
+    void execute(JVS query, RetrievalContext ctx, RetrievalResult result);
+}
+----
+
+== Extending — add a retrieval stage
+
+Recipe:
+
+**Step 1** — implement `Retriever`. Example: a re-ranker that boosts
+documents from a specific country:
+
+[source,java]
+----
+public class CountryBoostRetriever implements Retriever {
+
+    @Override
+    public boolean participate(RetrievalContext ctx) {
+        return ctx.getQuery().exists("boost.country");
+    }
+
+    @Override
+    public void execute(JVS query, RetrievalContext ctx, RetrievalResult result) {
+        String boostCountry = query.getString("boost.country");
+        for (JsonNode doc : result.getDocuments()) {
+            String country = doc.path("country").asText("");
+            if (boostCountry.equals(country)) {
+                double score = doc.path("_score").asDouble(1.0);
+                ((ObjectNode) doc).put("_score", score * 2.0);
+            }
+        }
+        // Optional: re-sort
+        result.sortByScore();
+        ctx.markStageUsed("CountryBoostRetriever");
+    }
+}
+----
+
+**Step 2** — wire into the builder:
+
+[source,java]
+----
+RetrievalPipeline pipeline = RetrievalPipelineBuilder
+        .stage(new IndexRetriever(searchProvider))
+        .stage(new DocumentRetriever(kvStore))
+        .stage(new CountryBoostRetriever())   // NEW — before pagination
+        .stage(new PaginationRetriever())
+        .stage(new FacetRetriever(searchProvider))
+        .build();
+----
+
+**Step 3** — send a query that triggers it:
+
+[source,json]
+----
+{
+  "search": { "query": "airports", "limit": 20 },
+  "boost":  { "country": "GB" }
+}
+----
+
+Stages compose in whatever order you register them. Ordering matters:
+`FixupRetriever` must run AFTER `DocumentRetriever` (nothing to fix up
+otherwise); `PaginationRetriever` should run before facets are computed
+if you want facets over the full result set (or after if you want
+per-page facets).
+
+== ReadOnly variants for fleet-retrieval
+
+The fleet-retrieval service opens indexes and KV stores in read-only
+mode via `ReadOnlyIndexService` (Lucene `DirectoryReader`) and
+`ReadOnlyKvStore` (RocksDB `openAsSecondary`) — no lock contention with
+writers still running upstream. Same `SearchProvider` and `KVStore`
+interfaces, different backing.
+
+See xref:../../hitorro-fleet-retrieval/docs/README.adoc[Fleet Retrieval]
+for how to run this as a Spring Boot service (standalone or shared mode).
+
+== Debugging
+
+Zero results but the index has docs::
+  `stagesUsed` should include `IndexRetriever`. If it doesn't, the
+  query shape is wrong (missing `search.query`). If it does but
+  `totalHits=0`, check the analyzer chain — a stemmed query against
+  an un-stemmed field won't match.
+
+`DocumentRetriever` returns docs with `mls: {}` (empty object) instead of `[]`::
+  Lucene stored an empty `_source` because the projected fields have
+  no mls[] entries. Confirm the source doc actually has populated
+  `title.mls[]` / `body.mls[]` — enrichment might not be running.
+  Trace with `-Dhitorro.dynamic.trace=1`.
+
+Fixup doesn't populate dynamic fields::
+  `fixup.tags` must intersect the Group's `tags`. Missing OpenNLP
+  model files also silently no-op. See
+  xref:../../hitorro-jsontypesystem/docs/enrichment.adoc[Enrichment].
+
+Facets empty::
+  Check the field has `DocValues` — required for faceting. Add
+  `.docValues(true)` to the `LuceneFieldType` declaration.
+
+== Where to read more
+
+* Source: `hitorro-retrieval/src/main/java/com/hitorro/retrieval/`
+* xref:../../hitorro-index/docs/lucene-integration.adoc[Indexing] — how search hits get built
+* xref:../../hitorro-fleet-retrieval/docs/README.adoc[Fleet Retrieval] — Spring Boot service wrapper
+* xref:../../hitorro-jsontypesystem/docs/enrichment.adoc[Enrichment] — what fixup actually does
