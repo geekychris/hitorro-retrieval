@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hitorro.index.search.SearchResult;
 import com.hitorro.jsontypesystem.JVS;
 import com.hitorro.retrieval.cluster.NodeAddress;
+import com.hitorro.retrieval.merger.SortCriteria;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +51,15 @@ public class StreamingRemoteSearchProvider implements SearchProvider {
     @Override
     public SearchResult search(String indexName, String queryString, int offset, int limit,
                                List<String> facetDims, String lang) throws Exception {
-        StreamingResult streaming = searchStreaming(indexName, queryString, offset, limit, facetDims, lang);
+        return search(indexName, queryString, offset, limit, facetDims, lang, null);
+    }
+
+    @Override
+    public SearchResult search(String indexName, String queryString, int offset, int limit,
+                               List<String> facetDims, String lang,
+                               SortCriteria sortCriteria) throws Exception {
+        StreamingResult streaming = searchStreaming(indexName, queryString, offset, limit,
+                                                    facetDims, lang, sortCriteria);
         List<JVS> docs = new ArrayList<>();
         streaming.documents().forEachRemaining(docs::add);
         return SearchResult.builder()
@@ -69,6 +78,17 @@ public class StreamingRemoteSearchProvider implements SearchProvider {
      */
     public StreamingResult searchStreaming(String indexName, String queryString, int offset, int limit,
                                           List<String> facetDims, String lang) throws Exception {
+        return searchStreaming(indexName, queryString, offset, limit, facetDims, lang, null);
+    }
+
+    /** Streaming variant with an optional {@link SortCriteria} chain
+     *  serialised into the outbound querystring as compact
+     *  {@code field:direction[,…]}. Remote nodes that don't recognise
+     *  the {@code sort} param drop it silently — the response is still
+     *  a valid (score-ordered) stream. */
+    public StreamingResult searchStreaming(String indexName, String queryString, int offset, int limit,
+                                           List<String> facetDims, String lang,
+                                           SortCriteria sortCriteria) throws Exception {
         String url = node.getBaseUrl() + "/api/search/stream"
                 + "?index=" + encode(indexName)
                 + "&q=" + encode(queryString)
@@ -77,6 +97,10 @@ public class StreamingRemoteSearchProvider implements SearchProvider {
                 + "&lang=" + encode(lang);
         if (facetDims != null && !facetDims.isEmpty()) {
             url += "&facets=" + encode(String.join(",", facetDims));
+        }
+        String sortWire = RemoteSearchProvider.encodeSort(sortCriteria);
+        if (sortWire != null) {
+            url += "&sort=" + encode(sortWire);
         }
 
         HttpRequest request = HttpRequest.newBuilder()

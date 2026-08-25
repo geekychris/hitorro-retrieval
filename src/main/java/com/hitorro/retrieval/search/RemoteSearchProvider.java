@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hitorro.index.search.SearchResult;
 import com.hitorro.jsontypesystem.JVS;
 import com.hitorro.retrieval.cluster.NodeAddress;
+import com.hitorro.retrieval.merger.SortCriteria;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +40,13 @@ public class RemoteSearchProvider implements SearchProvider {
     @Override
     public SearchResult search(String indexName, String queryString, int offset, int limit,
                                List<String> facetDims, String lang) throws Exception {
+        return search(indexName, queryString, offset, limit, facetDims, lang, null);
+    }
+
+    @Override
+    public SearchResult search(String indexName, String queryString, int offset, int limit,
+                               List<String> facetDims, String lang,
+                               SortCriteria sortCriteria) throws Exception {
         String url = node.getBaseUrl() + "/api/search"
                 + "?index=" + encode(indexName)
                 + "&q=" + encode(queryString)
@@ -47,6 +55,13 @@ public class RemoteSearchProvider implements SearchProvider {
                 + "&lang=" + encode(lang);
         if (facetDims != null && !facetDims.isEmpty()) {
             url += "&facets=" + encode(String.join(",", facetDims));
+        }
+        // Compact string form — remote /api/search accepts either the
+        // array-of-objects (POST body) or the "field:direction[,…]"
+        // querystring form. Older nodes ignore unrecognised params.
+        String sortWire = encodeSort(sortCriteria);
+        if (sortWire != null) {
+            url += "&sort=" + encode(sortWire);
         }
 
         HttpRequest request = HttpRequest.newBuilder()
@@ -104,5 +119,25 @@ public class RemoteSearchProvider implements SearchProvider {
 
     private static String encode(String s) {
         return java.net.URLEncoder.encode(s, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** Serialise the sort chain into the {@code field:direction[,…]}
+     *  compact form. Returns null for a null chain or a chain that
+     *  resolves to plain score-desc (Lucene's default, no need to send). */
+    static String encodeSort(SortCriteria criteria) {
+        if (criteria == null) return null;
+        if (criteria.next() == null
+                && criteria.type() == SortCriteria.SortType.SCORE
+                && criteria.direction() == SortCriteria.Direction.DESC) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (SortCriteria n = criteria; n != null; n = n.next()) {
+            if (n.field() == null || n.field().isBlank()) continue;
+            if (sb.length() > 0) sb.append(',');
+            sb.append(n.field()).append(':')
+              .append(n.direction() == SortCriteria.Direction.DESC ? "desc" : "asc");
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 }

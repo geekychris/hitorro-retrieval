@@ -110,20 +110,38 @@ public class CompositeSearchProvider implements SearchProvider {
     @Override
     public SearchResult search(String indexName, String queryString, int offset, int limit,
                                List<String> facetDims, String lang) throws Exception {
+        return search(indexName, queryString, offset, limit, facetDims, lang, this.sortCriteria);
+    }
+
+    @Override
+    public SearchResult search(String indexName, String queryString, int offset, int limit,
+                               List<String> facetDims, String lang,
+                               SortCriteria callerSort) throws Exception {
+        // A per-call sort chain overrides the instance default — but null
+        // still falls back to the instance's sortCriteria (which itself
+        // defaults to byScore in the constructor). This lets callers who
+        // built the composite with a default sort keep that default, while
+        // IndexRetriever can also request a per-query sort via the pipeline.
+        SortCriteria effective = callerSort != null ? callerSort : this.sortCriteria;
+
         if (providers.isEmpty()) {
             return SearchResult.builder()
                     .documents(List.of()).totalHits(0)
                     .query(queryString).offset(offset).limit(limit).build();
         }
 
-        // Single-provider shortcut — no fan-out, no merger overhead;
-        // stays byte-identical to what the provider itself returns.
+        // Single-provider shortcut — no fan-out, no merger overhead.
+        // Still forwards the sort so the underlying provider can honour it.
         if (providers.size() == 1 && providers.get(0).isAvailable()) {
-            return providers.get(0).search(indexName, queryString, offset, limit, facetDims, lang);
+            return providers.get(0).search(indexName, queryString, offset, limit, facetDims, lang, effective);
         }
 
-        // Concurrent fan-out — each provider gets 0..offset+limit so
-        // the merger has enough per-source docs to slice from.
+        // Concurrent fan-out — each provider gets 0..offset+limit AND
+        // the caller-requested sort, so per-source streams arrive
+        // pre-sorted by the same criteria the merger's comparator uses.
+        // SelectTreeMerger is a k-way heap merge, not a global sort, so
+        // if a source arrives score-ordered while the merger compares by
+        // date, the output is scrambled. Sort at the source fixes this.
         int perProviderLimit = offset + limit;
         List<CompletableFuture<SourceResult>> futures = new ArrayList<>(providers.size());
         for (SearchProvider p : providers) {
@@ -131,7 +149,8 @@ public class CompositeSearchProvider implements SearchProvider {
             String label = providerLabel(p);
             CompletableFuture<SourceResult> f = CompletableFuture.supplyAsync(() -> {
                 try {
-                    SearchResult sr = p.search(indexName, queryString, 0, perProviderLimit, facetDims, lang);
+                    SearchResult sr = p.search(indexName, queryString, 0, perProviderLimit,
+                                               facetDims, lang, effective);
                     return new SourceResult(label, sr, null);
                 } catch (Exception e) {
                     return new SourceResult(label, null, e);
@@ -168,7 +187,7 @@ public class CompositeSearchProvider implements SearchProvider {
                     .query(queryString).offset(offset).limit(limit).build();
         }
 
-        SelectTreeMerger merger = new SelectTreeMerger(sortCriteria, mergePolicies);
+        SelectTreeMerger merger = new SelectTreeMerger(effective, mergePolicies);
         SearchResult merged = merger.merge(streams, offset, limit);
         // Preserve query echo — the merger doesn't know it.
         return SearchResult.builder()

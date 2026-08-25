@@ -6,6 +6,8 @@ import com.hitorro.jsontypesystem.JVS;
 import com.hitorro.retrieval.aggregate.SearchSummaryAggregate;
 import com.hitorro.retrieval.context.ContextAttributes;
 import com.hitorro.retrieval.context.RetrievalContext;
+import com.hitorro.retrieval.merger.SortCriteria;
+import com.hitorro.retrieval.merger.SortCriteriaParser;
 import com.hitorro.retrieval.pipeline.Retriever;
 import com.hitorro.retrieval.search.LuceneSearchProvider;
 import com.hitorro.retrieval.search.SearchProvider;
@@ -53,8 +55,15 @@ public class IndexRetriever implements Retriever {
                 lang = query.getString("search.lang");
             }
 
+            // search.sort — optional composite sort chain. Accepts both
+            // the array-of-{field,direction} shape the coordinator emits
+            // and the compact "field:dir[,field:dir]" string the BFF /
+            // remote querystring can send. Null → provider falls back to
+            // score-desc (Lucene's default).
+            SortCriteria sortCriteria = extractSortCriteria(query);
+
             SearchResult result = searchProvider.search(
-                    context.getIndexName(), queryString, offset, limit, facetDims, lang);
+                    context.getIndexName(), queryString, offset, limit, facetDims, lang, sortCriteria);
 
             context.setSearchResult(result);
             context.addAggregate(new SearchSummaryAggregate());
@@ -83,5 +92,16 @@ public class IndexRetriever implements Retriever {
             if (query.exists(path)) return query.getStringList(path);
         } catch (Exception ignored) {}
         return new ArrayList<>();
+    }
+
+    /** Read search.sort from the query JVS in either the array or string
+     *  wire shape and delegate parsing to {@link SortCriteriaParser}. */
+    private static SortCriteria extractSortCriteria(JVS query) {
+        try {
+            if (!query.exists("search.sort")) return null;
+            return SortCriteriaParser.parse(query.getJsonNode().at("/search/sort"));
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }
