@@ -54,9 +54,13 @@ public class SummarizationRetriever implements Retriever {
         // Read config overrides from query
         int maxDocs = maxDocuments;
         int maxWords = maxSummaryWords;
+        String style = null;
+        String promptOverride = null;
         try {
             if (query.exists("summarize.maxDocs")) maxDocs = (int) query.getLong("summarize.maxDocs");
             if (query.exists("summarize.maxWords")) maxWords = (int) query.getLong("summarize.maxWords");
+            if (query.exists("summarize.style")) style = query.getString("summarize.style");
+            if (query.exists("summarize.prompt")) promptOverride = query.getString("summarize.prompt");
         } catch (Exception ignored) {}
 
         // Materialize documents
@@ -75,14 +79,29 @@ public class SummarizationRetriever implements Retriever {
             textBuilder.append("\n\n");
         }
 
+        // Resolve prompt: explicit `summarize.prompt` wins, else look up the
+        // `summarize.style` in the SummaryStyles catalogue, else fall back to
+        // the legacy summarize(text, maxWords) shortcut in AIOperations.
+        String promptTemplate = promptOverride;
+        if (promptTemplate == null && style != null && !style.isBlank()) {
+            promptTemplate = SummaryStyles.promptFor(style);
+            if (promptTemplate == null) {
+                log.warn("summarize.style '{}' not registered — falling back to BRIEF", style);
+            }
+        }
+        String resolvedStyle = style != null && !style.isBlank() ? style.trim().toUpperCase() : "BRIEF";
+
         // Call AI summarization
         long start = System.currentTimeMillis();
         try {
-            String summary = aiOperations.summarize(textBuilder.toString(), maxWords);
+            String summary = (promptTemplate == null)
+                    ? aiOperations.summarize(textBuilder.toString(), maxWords)
+                    : aiOperations.withPrompt(textBuilder.toString(), promptTemplate, maxWords);
             long duration = System.currentTimeMillis() - start;
 
             context.setAttribute(ContextAttributes.AI_SUMMARY, summary);
-            context.addAggregate(new SummarizationAggregate(summary, docsToSummarize, duration));
+            context.addAggregate(new SummarizationAggregate(
+                    summary, docsToSummarize, duration, resolvedStyle, promptTemplate));
         } catch (Exception e) {
             log.warn("AI summarization failed: {}", e.getMessage());
             context.addError("Summarization failed: " + e.getMessage());

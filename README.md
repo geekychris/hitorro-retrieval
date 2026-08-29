@@ -16,7 +16,7 @@ A retrieval pipeline for chaining search, document fetch, enrichment, pagination
   - [Step 3: Basic Retrieval](#step-3-basic-retrieval)
   - [Step 4: Add a KVStore for Document Fetch](#step-4-add-a-kvstore-for-document-fetch)
   - [Step 5: Multi-Index Search with Merging](#step-5-multi-index-search-with-merging)
-  - [Step 6: Add AI Summarization](#step-6-add-ai-summarization)
+  - [Step 6: Add AI Summarization](#step-6-add-ai-summarization) — see [Summarization variants](docs/summarization.md) for the built-in style catalogue (`BRIEF`, `CONTRIBUTIONS`, `ACTION_ITEMS`, `DECISIONS`, `SENTIMENT`, `ENTITIES`) and how to add your own.
   - [Step 7: Add Custom Pipeline Stages](#step-7-add-custom-pipeline-stages)
   - [Step 8: Go Distributed with Wire Transport](#step-8-go-distributed-with-wire-transport)
   - [Step 9: Expose Wire Transport Endpoints](#step-9-expose-wire-transport-endpoints)

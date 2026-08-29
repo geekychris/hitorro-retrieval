@@ -37,11 +37,27 @@ public class SummarizationAggregate implements RetrievalAggregate {
     final String summary;
     final int    documentCount;
     final long   durationMs;
+    /** Style name from the {@code SummaryStyles} catalogue (BRIEF,
+     *  CONTRIBUTIONS, ...). Never null; defaults to "BRIEF" when the
+     *  caller didn't specify one. */
+    final String style;
+    /** The exact prompt template rendered against the corpus. Null when
+     *  the legacy no-prompt {@code summarize(text, maxWords)} path was
+     *  used. Useful for downstream auditing / reproducibility. */
+    final String prompt;
 
+    /** Back-compat constructor — style defaults to "BRIEF", prompt to null. */
     public SummarizationAggregate(String summary, int documentCount, long durationMs) {
+        this(summary, documentCount, durationMs, "BRIEF", null);
+    }
+
+    public SummarizationAggregate(String summary, int documentCount, long durationMs,
+                                  String style, String prompt) {
         this.summary = summary;
         this.documentCount = documentCount;
         this.durationMs = durationMs;
+        this.style = style == null ? "BRIEF" : style;
+        this.prompt = prompt;
     }
 
     @Override
@@ -66,6 +82,8 @@ public class SummarizationAggregate implements RetrievalAggregate {
         jvs.set("summary", summary);
         jvs.set("documentCount", documentCount);
         jvs.set("durationMs", durationMs);
+        jvs.set("style", style);
+        if (prompt != null) jvs.set("prompt", prompt);
         return jvs;
     }
 
