@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Hitorro Retrieval logo" width="180">
+</p>
+
 # Hitorro Retrieval
 
 A retrieval pipeline for chaining search, document fetch, enrichment, pagination, faceting, and AI summarization across pluggable search backends and distributed nodes. Replaces the old hitorro-objretrieval module (Solr/Xodus) with Lucene/RocksDB and adds multi-provider merging, stream-native stages, wire transport, and cluster-aware service discovery.
