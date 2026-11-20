@@ -3,6 +3,7 @@ package com.hitorro.retrieval.cluster;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.core.JacksonException;
+import com.hitorro.util.json.YamlMappers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,7 +41,7 @@ public class YamlServiceRegistry implements ServiceRegistry {
     private static final Logger log = LoggerFactory.getLogger(YamlServiceRegistry.class);
     private final Path configPath;
     /** Reads YAML as {@code new ObjectMapper(new YAMLFactory())} did on Jackson 2 (scalar typing, defaults, limits). */
-    private static final ObjectMapper YAML = Jackson2Yaml.builder().build();
+    private static final ObjectMapper YAML = YamlMappers.yaml();
     private final ObjectMapper yamlMapper;
     private volatile ClusterConfig clusterConfig;
 
