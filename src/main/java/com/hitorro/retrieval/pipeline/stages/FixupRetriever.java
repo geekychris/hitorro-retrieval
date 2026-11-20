@@ -1,6 +1,6 @@
 package com.hitorro.retrieval.pipeline.stages;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hitorro.jsontypesystem.BaseT;
 import com.hitorro.jsontypesystem.Group;
 import com.hitorro.jsontypesystem.JVS;

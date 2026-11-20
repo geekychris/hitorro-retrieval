@@ -1,8 +1,8 @@
 package com.hitorro.retrieval.cluster;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import com.hitorro.util.json.JsonValues;
 
 /**
  * ServiceRegistry backed by a YAML configuration file.
@@ -38,20 +39,22 @@ public class YamlServiceRegistry implements ServiceRegistry {
 
     private static final Logger log = LoggerFactory.getLogger(YamlServiceRegistry.class);
     private final Path configPath;
+    /** Reads YAML as {@code new ObjectMapper(new YAMLFactory())} did on Jackson 2 (scalar typing, defaults, limits). */
+    private static final ObjectMapper YAML = Jackson2Yaml.builder().build();
     private final ObjectMapper yamlMapper;
     private volatile ClusterConfig clusterConfig;
 
     /** Load from a file path (supports refresh). */
     public YamlServiceRegistry(Path configPath) {
         this.configPath = configPath;
-        this.yamlMapper = new ObjectMapper(new YAMLFactory());
+        this.yamlMapper = YAML;
         refresh();
     }
 
     /** Load from an InputStream (for testing; refresh reloads from same stream is not possible). */
     public YamlServiceRegistry(InputStream configStream) {
         this.configPath = null;
-        this.yamlMapper = new ObjectMapper(new YAMLFactory());
+        this.yamlMapper = YAML;
         try {
             this.clusterConfig = parse(configStream);
         } catch (IOException e) {
@@ -86,25 +89,31 @@ public class YamlServiceRegistry implements ServiceRegistry {
     }
 
     private ClusterConfig parse(InputStream is) throws IOException {
-        JsonNode root = yamlMapper.readTree(is);
+        JsonNode root;
+        try {
+            root = yamlMapper.readTree(is);
+        } catch (JacksonException e) {
+            // malformed YAML stays an IOException (logged, and the previous/empty config kept), as in 3.x
+            throw new IOException(e.getMessage(), e);
+        }
         JsonNode clusterNode = root.has("cluster") ? root.get("cluster") : root;
 
-        String name = clusterNode.has("name") ? clusterNode.get("name").asText() : "default";
+        String name = clusterNode.has("name") ? JsonValues.asText(clusterNode.get("name")) : "default";
         List<NodeAddress> nodes = new ArrayList<>();
 
         if (clusterNode.has("nodes") && clusterNode.get("nodes").isArray()) {
             for (JsonNode nodeJson : clusterNode.get("nodes")) {
-                String nodeName = nodeJson.has("name") ? nodeJson.get("name").asText() : "node-" + nodes.size();
-                String host = nodeJson.has("host") ? nodeJson.get("host").asText() : "localhost";
-                int port = nodeJson.has("port") ? nodeJson.get("port").asInt() : 8080;
+                String nodeName = nodeJson.has("name") ? JsonValues.asText(nodeJson.get("name")) : "node-" + nodes.size();
+                String host = nodeJson.has("host") ? JsonValues.asText(nodeJson.get("host")) : "localhost";
+                int port = nodeJson.has("port") ? JsonValues.asInt(nodeJson.get("port")) : 8080;
 
                 Set<NodeRole> roles = EnumSet.noneOf(NodeRole.class);
                 if (nodeJson.has("roles") && nodeJson.get("roles").isArray()) {
                     for (JsonNode roleNode : nodeJson.get("roles")) {
                         try {
-                            roles.add(NodeRole.valueOf(roleNode.asText().toUpperCase()));
+                            roles.add(NodeRole.valueOf(JsonValues.asText(roleNode).toUpperCase()));
                         } catch (IllegalArgumentException e) {
-                            log.warn("Unknown node role: {}", roleNode.asText());
+                            log.warn("Unknown node role: {}", JsonValues.asText(roleNode));
                         }
                     }
                 }

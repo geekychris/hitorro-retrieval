@@ -1,6 +1,6 @@
 package com.hitorro.retrieval.pipeline;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hitorro.index.IndexManager;
 import com.hitorro.jsontypesystem.datamapper.AIOperations;
 import com.hitorro.kvstore.TypedKVStore;

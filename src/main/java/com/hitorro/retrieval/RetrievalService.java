@@ -1,6 +1,6 @@
 package com.hitorro.retrieval;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hitorro.index.IndexManager;
 import com.hitorro.jsontypesystem.JVS;
 import com.hitorro.jsontypesystem.datamapper.AIOperations;

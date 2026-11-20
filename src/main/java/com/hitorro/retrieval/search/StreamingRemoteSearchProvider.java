@@ -1,7 +1,9 @@
 package com.hitorro.retrieval.search;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import com.hitorro.util.json.JsonMappers;
 import com.hitorro.index.search.SearchResult;
 import com.hitorro.jsontypesystem.JVS;
 import com.hitorro.retrieval.cluster.NodeAddress;
@@ -16,6 +18,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.*;
+import com.hitorro.util.json.JsonValues;
 
 /**
  * SearchProvider that streams results from a remote node via NDJson.
@@ -45,7 +48,7 @@ public class StreamingRemoteSearchProvider implements SearchProvider {
     public StreamingRemoteSearchProvider(NodeAddress node, HttpClient httpClient) {
         this.node = node;
         this.httpClient = httpClient;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = JsonMappers.json();
     }
 
     @Override
@@ -124,9 +127,16 @@ public class StreamingRemoteSearchProvider implements SearchProvider {
         long totalHits = 0;
         long searchTimeMs = 0;
         if (metaLine != null) {
-            JsonNode meta = objectMapper.readTree(metaLine);
-            totalHits = meta.has("totalHits") ? meta.get("totalHits").asLong() : 0;
-            searchTimeMs = meta.has("searchTimeMs") ? meta.get("searchTimeMs").asLong() : 0;
+            JsonNode meta;
+            try {
+                meta = objectMapper.readTree(metaLine);
+            } catch (JacksonException e) {
+                // a malformed metadata line stays an IOException, as with Jackson 2
+                reader.close();
+                throw new java.io.IOException(e.getMessage(), e);
+            }
+            totalHits = meta.has("totalHits") ? JsonValues.asLong(meta.get("totalHits")) : 0;
+            searchTimeMs = meta.has("searchTimeMs") ? JsonValues.asLong(meta.get("searchTimeMs")) : 0;
         }
 
         TypedNDJsonIterator iterator = new TypedNDJsonIterator(reader, objectMapper);
@@ -197,7 +207,7 @@ public class StreamingRemoteSearchProvider implements SearchProvider {
                     }
 
                     JsonNode node = objectMapper.readTree(line);
-                    String type = node.has("_type") ? node.get("_type").asText() : "doc";
+                    String type = node.has("_type") ? JsonValues.asText(node.get("_type")) : "doc";
 
                     if ("doc".equals(type)) {
                         nextDoc = new JVS(node);

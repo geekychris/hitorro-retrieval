@@ -1,6 +1,6 @@
 package com.hitorro.retrieval.docstore;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.hitorro.kvstore.Result;
 
 /**

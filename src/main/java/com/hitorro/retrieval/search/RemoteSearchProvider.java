@@ -1,7 +1,9 @@
 package com.hitorro.retrieval.search;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import com.hitorro.util.json.JsonMappers;
 import com.hitorro.index.search.SearchResult;
 import com.hitorro.jsontypesystem.JVS;
 import com.hitorro.retrieval.cluster.NodeAddress;
@@ -15,6 +17,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.List;
+import com.hitorro.util.json.JsonValues;
 
 /**
  * SearchProvider that delegates to a remote search node via HTTP.
@@ -34,7 +37,7 @@ public class RemoteSearchProvider implements SearchProvider {
     public RemoteSearchProvider(NodeAddress node, HttpClient httpClient) {
         this.node = node;
         this.httpClient = httpClient;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = JsonMappers.json();
     }
 
     @Override
@@ -79,7 +82,13 @@ public class RemoteSearchProvider implements SearchProvider {
     }
 
     private SearchResult parseSearchResult(String json, String query, int offset, int limit) throws Exception {
-        JsonNode root = objectMapper.readTree(json);
+        JsonNode root;
+        try {
+            root = objectMapper.readTree(json);
+        } catch (JacksonException e) {
+            // a malformed response stays an IOException, as with Jackson 2
+            throw new java.io.IOException(e.getMessage(), e);
+        }
         List<JVS> documents = new ArrayList<>();
         if (root.has("documents") && root.get("documents").isArray()) {
             for (JsonNode doc : root.get("documents")) {
@@ -87,8 +96,8 @@ public class RemoteSearchProvider implements SearchProvider {
             }
         }
 
-        long totalHits = root.has("totalHits") ? root.get("totalHits").asLong() : documents.size();
-        long searchTimeMs = root.has("searchTimeMs") ? root.get("searchTimeMs").asLong() : 0;
+        long totalHits = root.has("totalHits") ? JsonValues.asLong(root.get("totalHits")) : documents.size();
+        long searchTimeMs = root.has("searchTimeMs") ? JsonValues.asLong(root.get("searchTimeMs")) : 0;
 
         return SearchResult.builder()
                 .documents(documents)
