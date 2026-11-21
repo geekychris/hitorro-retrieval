@@ -1,7 +1,8 @@
 package com.hitorro.retrieval.docstore;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import com.hitorro.util.json.JsonMappers;
 import com.hitorro.kvstore.Result;
 import com.hitorro.retrieval.cluster.NodeAddress;
 import org.slf4j.Logger;
@@ -29,7 +30,7 @@ public class RemoteDocumentStore implements DocumentStore {
     public RemoteDocumentStore(NodeAddress node, HttpClient httpClient) {
         this.node = node;
         this.httpClient = httpClient;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = JsonMappers.json();
     }
 
     @Override

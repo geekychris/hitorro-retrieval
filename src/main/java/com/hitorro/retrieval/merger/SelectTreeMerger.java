@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
+import com.hitorro.util.json.JsonValues;
 
 /**
  * K-way streaming merger over per-source {@link SearchStream}s.
@@ -214,9 +215,9 @@ public final class SelectTreeMerger {
             if (!doc.exists(field)) return null;
             var node = doc.get(field);
             if (node == null || node.isNull()) return null;
-            if (node.isNumber()) return node.asDouble();
-            if (node.isBoolean()) return node.asBoolean();
-            return node.asText();
+            if (node.isNumber()) return JsonValues.asDouble(node);
+            if (node.isBoolean()) return JsonValues.asBoolean(node);
+            return JsonValues.asText(node);
         } catch (Exception e) {
             return null;
         }

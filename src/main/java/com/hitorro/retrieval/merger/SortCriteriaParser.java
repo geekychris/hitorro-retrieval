@@ -3,7 +3,8 @@
  */
 package com.hitorro.retrieval.merger;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
+import com.hitorro.util.json.JsonValues;
 
 /**
  * Wire-shape parsers for {@link SortCriteria} chains — the same syntax
@@ -43,7 +44,7 @@ public final class SortCriteriaParser {
     public static SortCriteria parse(JsonNode node) {
         if (node == null || node.isNull() || node.isMissingNode()) return null;
         if (node.isArray())   return parseArray(node);
-        if (node.isTextual()) return parseString(node.asText());
+        if (node.isString()) return parseString(JsonValues.asText(node));
         return null;
     }
 
@@ -71,9 +72,9 @@ public final class SortCriteriaParser {
     private static SortCriteria parseArray(JsonNode arr) {
         SortCriteria head = null;
         for (JsonNode elem : arr) {
-            String field = elem.path("field").asText(null);
+            String field = JsonValues.asText(elem.path("field"), null);
             if (field == null || field.isBlank()) continue;
-            SortCriteria.Direction dir = "asc".equalsIgnoreCase(elem.path("direction").asText("desc"))
+            SortCriteria.Direction dir = "asc".equalsIgnoreCase(JsonValues.asText(elem.path("direction"), "desc"))
                     ? SortCriteria.Direction.ASC
                     : SortCriteria.Direction.DESC;
             head = (head == null) ? SortCriteria.byField(field, dir) : head.then(field, dir);
